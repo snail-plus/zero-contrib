@@ -81,7 +81,7 @@ func (b *builder) Build(url resolver.Target, conn resolver.ClientConn, opts reso
 	})
 
 	go populateEndpoints(ctx, conn, pipe)
-	watcher.CallBackHandle(cli.SelectInstances(vo.SelectInstancesParam{
+	go watcher.CallBackHandle(cli.SelectAllInstances(vo.SelectAllInstancesParam{
 		Clusters:    tgt.Clusters,
 		ServiceName: tgt.Service,
 		GroupName:   tgt.GroupName,
