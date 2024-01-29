@@ -3,6 +3,7 @@ package nacos
 import (
 	"context"
 	"fmt"
+	"github.com/nacos-group/nacos-sdk-go/v2/model"
 	"net"
 	"strconv"
 
@@ -41,11 +42,11 @@ func (b *builder) Build(url resolver.Target, conn resolver.ClientConn, opts reso
 	}
 
 	cc := &constant.ClientConfig{
-		AppName:     tgt.AppName,
-		NamespaceId: tgt.NamespaceID,
-		Username:    tgt.User,
-		Password:    tgt.Password,
-		TimeoutMs:   uint64(tgt.Timeout),
+		AppName:              tgt.AppName,
+		NamespaceId:          tgt.NamespaceID,
+		Username:             tgt.User,
+		Password:             tgt.Password,
+		TimeoutMs:            uint64(tgt.Timeout),
 		NotLoadCacheAtStart:  tgt.NotLoadCacheAtStart,
 		UpdateCacheWhenEmpty: tgt.UpdateCacheWhenEmpty,
 	}
@@ -69,17 +70,22 @@ func (b *builder) Build(url resolver.Target, conn resolver.ClientConn, opts reso
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	pipe := make(chan []string)
+	pipe := make(chan []model.Instance)
 
+	watcher := newWatcher(ctx, cancel, pipe)
 	go cli.Subscribe(&vo.SubscribeParam{
 		ServiceName:       tgt.Service,
 		Clusters:          tgt.Clusters,
 		GroupName:         tgt.GroupName,
-		SubscribeCallback: newWatcher(ctx, cancel, pipe).CallBackHandle, // required
+		SubscribeCallback: watcher.CallBackHandle, // required
 	})
 
 	go populateEndpoints(ctx, conn, pipe)
-
+	watcher.CallBackHandle(cli.SelectInstances(vo.SelectInstancesParam{
+		Clusters:    tgt.Clusters,
+		ServiceName: tgt.Service,
+		GroupName:   tgt.GroupName,
+	}))
 	return &resolvr{cancelFunc: cancel}, nil
 }
 

@@ -3,6 +3,7 @@ package nacos
 import (
 	"context"
 	"fmt"
+	"google.golang.org/grpc/attributes"
 	"sort"
 
 	"github.com/nacos-group/nacos-sdk-go/v2/common/logger"
@@ -25,10 +26,10 @@ func (r *resolvr) Close() {
 type watcher struct {
 	ctx    context.Context
 	cancel context.CancelFunc
-	out    chan<- []string
+	out    chan<- []model.Instance
 }
 
-func newWatcher(ctx context.Context, cancel context.CancelFunc, out chan<- []string) *watcher {
+func newWatcher(ctx context.Context, cancel context.CancelFunc, out chan<- []model.Instance) *watcher {
 	return &watcher{
 		ctx:    ctx,
 		cancel: cancel,
@@ -41,28 +42,31 @@ func (nw *watcher) CallBackHandle(services []model.Instance, err error) {
 		logger.Error("[Nacos resolver] watcher call back handle error:%v", err)
 		return
 	}
-	ee := make([]string, 0, len(services))
-	for _, s := range services {
-		if s.Metadata != nil && s.Metadata["gRPC_port"] != "" {
-			ee = append(ee, fmt.Sprintf("%s:%s", s.Ip, s.Metadata["gRPC_port"]))
-		} else {
-			ee = append(ee, fmt.Sprintf("%s:%d", s.Ip, s.Port))
-		}
-	}
-	nw.out <- ee
+	nw.out <- services
 }
 
-func populateEndpoints(ctx context.Context, clientConn resolver.ClientConn, input <-chan []string) {
+func populateEndpoints(ctx context.Context, clientConn resolver.ClientConn, input <-chan []model.Instance) {
 	for {
 		select {
 		case cc := <-input:
-			connsSet := make(map[string]struct{}, len(cc))
+			connsSet := make(map[string]model.Instance, len(cc))
 			for _, c := range cc {
-				connsSet[c] = struct{}{}
+				addr := fmt.Sprintf("%s:%d", c.Ip, c.Port)
+				connsSet[addr] = c
 			}
 			conns := make([]resolver.Address, 0, len(connsSet))
-			for c := range connsSet {
-				conns = append(conns, resolver.Address{Addr: c})
+			for k, v := range connsSet {
+				metadata := v.Metadata
+				var attribute *attributes.Attributes
+				for key, value := range metadata {
+					attribute = attribute.WithValue(key, value)
+				}
+
+				conns = append(conns, resolver.Address{
+					Addr:       k,
+					ServerName: v.ServiceName,
+					Attributes: attribute,
+				})
 			}
 			sort.Sort(byAddressString(conns)) // Don't replace the same address list in the balancer
 			_ = clientConn.UpdateState(resolver.State{Addresses: conns})
