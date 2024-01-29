@@ -49,6 +49,7 @@ func populateEndpoints(ctx context.Context, clientConn resolver.ClientConn, inpu
 	for {
 		select {
 		case cc := <-input:
+			logx.Infof("service instance: %v", cc)
 			connsSet := make(map[string]model.Instance, len(cc))
 			for _, c := range cc {
 				addr := fmt.Sprintf("%s:%d", c.Ip, c.Port)
